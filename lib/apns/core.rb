@@ -23,9 +23,10 @@ module APNS
 
     packed_nofications = self.packed_nofications(notifications)
 
-    notifications.each do |n|
-      ssl.write(packed_nofications)
-    end
+    bytes  = ''
+    bytes << ([2,packed_notifications.bytesize].pack('CN') + packed_notifications)
+
+    ssl.write(bytes)
 
     ssl.close
     sock.close
