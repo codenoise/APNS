@@ -22,10 +22,10 @@ module APNS
     sock, ssl = self.open_connection
     bad_notifications = []
 
-    # group notifications in to groups of 10.
+    # separate notifications in to groups of 10.
     notifications = group_array(notifications, 10, false)
-    
-    # send out each group as a block request
+
+    # send out each group as a block
     notifications.each do |n|
       packed_nofications = self.packed_nofications(n)
       begin
@@ -34,15 +34,24 @@ module APNS
         sleep(0.25) #ensure APNS has time to reply
         err_packet = ssl.read_nonblock(6)
 
-        # should not get here unless apple returns something
+        # should not get here unless apple returns an error
         command, errorCode, identifier = err_packet.unpack('CCN');
         puts "Command: #{command} Code: #{errorCode} Identifier: #{identifier}"
-        bad_notifications << {error_code:errorCode, notification: (n.find{|n1| n1.message_identifier.unpack('N') == identifier})}
+        bad_notification_index = (n.find_index{|n1| n1.message_identifier.unpack('N').first == identifier})
+        bad_notifications << {error_code:errorCode, notification: n[bad_notification_index]}
+
+        # retry the notifications after the bad one
+        bad_notifications += self.send_notifications(n[bad_notification_index+1..-1])
+
+        # reset the socket
         ssl.close if ssl
         sock.close if sock
         sock, ssl = self.open_connection
+
       rescue IO::WaitReadable
+        # no error, move along
       rescue Exception => e
+        # caught some error, reset the connection and move along
         puts "caught an exception: #{e.inspect}"
         ssl.close if ssl
         sock.close if sock
@@ -50,11 +59,11 @@ module APNS
       end
     end
 
+    bad_notifications || []
   ensure
     ssl.close if ssl
     sock.close if sock
 
-    bad_notifications || []
   end
 
   def self.packed_nofications(notifications)
