@@ -20,10 +20,12 @@ module APNS
 
   def self.send_notifications(notifications)
     sock, ssl = self.open_connection
+    bad_notifications = []
 
-
-    notifications = self.in_groups_of(notifications, 10, false)
+    # group notifications in to groups of 10.
+    notifications = group_array(notifications, 10, false)
     
+    # send out each group as a block request
     notifications.each do |n|
       packed_nofications = self.packed_nofications(n)
       begin
@@ -31,19 +33,28 @@ module APNS
 
         sleep(0.25) #ensure APNS has time to reply
         err_packet = ssl.read_nonblock(6)
+
+        # should not get here unless apple returns something
         command, errorCode, identifier = err_packet.unpack('CCN');
         puts "Command: #{command} Code: #{errorCode} Identifier: #{identifier}"
-      rescue IO::WaitReadable
-      rescue
+        bad_notifications << {error_code:errorCode, notification: (n.find{|n1| n1.message_identifier.unpack('N') == identifier})}
         ssl.close if ssl
         sock.close if sock
-        sock, ssl = self.open_connection        
+        sock, ssl = self.open_connection
+      rescue IO::WaitReadable
+      rescue Exception => e
+        puts "caught an exception: #{e.inspect}"
+        ssl.close if ssl
+        sock.close if sock
+        sock, ssl = self.open_connection
       end
     end
 
   ensure
     ssl.close if ssl
     sock.close if sock
+
+    bad_notifications || []
   end
 
   def self.packed_nofications(notifications)
@@ -111,7 +122,7 @@ module APNS
     return sock, ssl
   end
   
-  def in_groups_of(arr, number, fill_with = nil)
+  def self.group_array(arr, number, fill_with = nil)
     if fill_with == false
       collection = arr
     else
