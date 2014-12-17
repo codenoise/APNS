@@ -22,11 +22,23 @@ module APNS
     sock, ssl = self.open_connection
 
 
+    notifications = self.in_groups_of(notifications, 10, false)
+    
     notifications.each do |n|
-      packed_nofications = self.packed_nofications([n])
-      ssl.write(packed_nofications)
+      packed_nofications = self.packed_nofications(n)
+      begin
+        ssl.write(packed_nofications)
 
-      raise "error sending APNS packet: #{n.inspect}" if ssl.pending > 0
+        sleep(0.25) #ensure APNS has time to reply
+        err_packet = ssl.read_nonblock(6)
+        command, errorCode, identifier = err_packet.unpack('CCN');
+        puts "Command: #{command} Code: #{errorCode} Identifier: #{identifier}"
+      rescue IO::WaitReadable
+      rescue
+        ssl.close if ssl
+        sock.close if sock
+        sock, ssl = self.open_connection        
+      end
     end
 
   ensure
@@ -97,5 +109,23 @@ module APNS
     ssl.connect
 
     return sock, ssl
+  end
+  
+  def in_groups_of(arr, number, fill_with = nil)
+    if fill_with == false
+      collection = arr
+    else
+      # size % number gives how many extra we have;
+      # subtracting from number gives how many to add;
+      # modulo number ensures we don't add group of just fill.
+      padding = (number - size % number) % number
+      collection = dup.concat(Array.new(padding, fill_with))
+    end
+
+    if block_given?
+      collection.each_slice(number) { |slice| yield(slice) }
+    else
+      collection.each_slice(number).to_a
+    end
   end
 end
