@@ -23,15 +23,15 @@ module APNS
 
 
     notifications.each do |n|
-      packed_nofications = self.packed_nofications(n)
+      packed_nofications = self.packed_nofications([n])
       ssl.write(packed_nofications)
 
       raise "error sending APNS packet: #{n.inspect}" if ssl.pending > 0
     end
 
   ensure
-    ssl.close
-    sock.close
+    ssl.close if ssl
+    sock.close if sock
   end
 
   def self.packed_nofications(notifications)
